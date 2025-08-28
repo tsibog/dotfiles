@@ -61,6 +61,18 @@ curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/.gitconfig -
 curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/.zshrc -o ~/.zshrc || log_error "Failed to download .zshrc" "curl .zshrc"  
 curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/.zprofile -o ~/.zprofile || log_error "Failed to download .zprofile" "curl .zprofile"
 
+# Install Claude CLI via npm
+echo "🤖 Installing Claude CLI..."
+if command -v npm &> /dev/null; then
+    if ! npm install -g @anthropic-ai/claude-code; then
+        log_error "Failed to install Claude CLI" "npm install -g @anthropic-ai/claude-code"
+    else
+        echo "✅ Claude CLI installed successfully"
+    fi
+else
+    log_error "npm not found - Claude CLI installation skipped" "npm install -g @anthropic-ai/claude-code"
+fi
+
 # Setup SSH directory and config
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
