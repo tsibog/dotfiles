@@ -1,8 +1,19 @@
 #!/bin/bash
 
-set -e  # Exit on any error
+# Create error log
+ERROR_LOG="$HOME/dotfiles-setup-errors.log"
+echo "Setup started at $(date)" > "$ERROR_LOG"
+
+# Function to log errors but continue
+log_error() {
+    echo "❌ ERROR: $1" | tee -a "$ERROR_LOG"
+    echo "   Command: $2" >> "$ERROR_LOG"
+    echo "   Time: $(date)" >> "$ERROR_LOG"
+    echo "" >> "$ERROR_LOG"
+}
 
 echo "🚀 Setting up your new Mac..."
+echo "📝 Errors will be logged to: $ERROR_LOG"
 
 # Install Homebrew if not already installed
 if ! command -v brew &> /dev/null; then
@@ -23,33 +34,70 @@ echo "📥 Downloading dotfiles..."
 curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/Brewfile -o /tmp/Brewfile
 
 echo "🍺 Installing all packages from Brewfile..."
-brew bundle install --file=/tmp/Brewfile
+if ! brew bundle install --file=/tmp/Brewfile; then
+    log_error "Brewfile installation failed" "brew bundle install --file=/tmp/Brewfile"
+    echo "⚠️  Some packages may have failed to install. Check $ERROR_LOG for details."
+else
+    echo "✅ Brewfile installation completed successfully"
+fi
 
 echo "⚙️  Setting up dotfiles..."
 
 # Install Oh My Zsh if not already installed
 if [ ! -d "$HOME/.oh-my-zsh" ]; then
     echo "🐚 Installing Oh My Zsh..."
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+    if ! sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended; then
+        log_error "Oh My Zsh installation failed" "oh-my-zsh install script"
+    else
+        echo "✅ Oh My Zsh installed successfully"
+    fi
 else
     echo "✅ Oh My Zsh already installed"
 fi
 
 # Download and install config files
-curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/.gitconfig -o ~/.gitconfig
-curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/.zshrc -o ~/.zshrc
-curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/.zprofile -o ~/.zprofile
+echo "📄 Downloading config files..."
+curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/.gitconfig -o ~/.gitconfig || log_error "Failed to download .gitconfig" "curl .gitconfig"
+curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/.zshrc -o ~/.zshrc || log_error "Failed to download .zshrc" "curl .zshrc"  
+curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/.zprofile -o ~/.zprofile || log_error "Failed to download .zprofile" "curl .zprofile"
 
 # Setup SSH directory and config
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/ssh/config -o ~/.ssh/config
-curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/ssh/id_ed25519.pub -o ~/.ssh/id_ed25519.pub
-chmod 644 ~/.ssh/config ~/.ssh/id_ed25519.pub
+chmod 644 ~/.ssh/config
+
+# Generate fresh SSH key automatically
+if [ ! -f ~/.ssh/id_ed25519 ]; then
+    echo "🔑 Generating fresh SSH key..."
+    ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -C "$(git config user.email || echo "$(whoami)@$(hostname)")"
+    chmod 600 ~/.ssh/id_ed25519
+    chmod 644 ~/.ssh/id_ed25519.pub
+    
+    # Add key to ssh-agent
+    eval "$(ssh-agent -s)"
+    ssh-add ~/.ssh/id_ed25519
+    
+    # Copy public key to clipboard
+    pbcopy < ~/.ssh/id_ed25519.pub
+    echo "📋 SSH public key copied to clipboard!"
+else
+    echo "✅ SSH key already exists"
+fi
 
 echo "🧹 Cleaning up..."
 rm /tmp/Brewfile
 
 echo "✨ Setup complete! You may need to restart your terminal."
-echo "⚠️  Don't forget to:"
-echo "   - Add your SSH private key to ~/.ssh/id_ed25519"
+
+# Show summary
+if [ -s "$ERROR_LOG" ] && [ "$(wc -l < "$ERROR_LOG")" -gt 1 ]; then
+    echo "⚠️  Some steps encountered errors. Check the log:"
+    echo "   cat $ERROR_LOG"
+    echo ""
+fi
+
+echo "🔑 Next steps:"
+echo "   - SSH key has been generated and copied to clipboard"
+echo "   - Go to GitHub Settings > SSH Keys and paste the key" 
+echo "   - Test connection: ssh -T git@github.com"
