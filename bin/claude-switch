@@ -1,0 +1,149 @@
+#!/bin/bash
+set -euo pipefail
+
+SERVICE="Claude Code-credentials"
+ACCOUNT="$(whoami)"
+PROFILE_DIR="$HOME/.claude/profiles"
+CLAUDE_JSON="$HOME/.claude.json"
+
+usage() {
+  echo "Usage:"
+  echo "  claude-switch save <name>   Save current credentials as a profile"
+  echo "  claude-switch <name>        Switch to a saved profile"
+  echo "  claude-switch info          Show all profiles with expiry"
+  exit 1
+}
+
+get_current_creds() {
+  security find-generic-password -s "$SERVICE" -a "$ACCOUNT" -w 2>/dev/null
+}
+
+save_profile() {
+  local name="$1"
+  local creds
+  creds=$(get_current_creds) || { echo "No credentials found in keychain"; exit 1; }
+  mkdir -p "$PROFILE_DIR"
+  python3 -c "
+import json, sys
+creds = json.loads(sys.argv[1])
+with open(sys.argv[2]) as f:
+    claude_json = json.load(f)
+profile = {'keychain': creds, 'oauthAccount': claude_json.get('oauthAccount', {})}
+with open(sys.argv[3], 'w') as f:
+    json.dump(profile, f, indent=2)
+" "$creds" "$CLAUDE_JSON" "$PROFILE_DIR/${name}.json"
+  echo "Saved profile: $name"
+}
+
+detect_active_profile() {
+  local current
+  current=$(get_current_creds 2>/dev/null) || return 1
+  local rt
+  rt=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('claudeAiOauth',{}).get('refreshToken',''))" "$current")
+  for f in "$PROFILE_DIR"/*.json; do
+    [[ -f "$f" ]] || continue
+    local profile_rt
+    profile_rt=$(python3 -c "
+import json,sys
+with open(sys.argv[1]) as fh: d=json.load(fh)
+print(d.get('keychain',d).get('claudeAiOauth',{}).get('refreshToken',''))
+" "$f")
+    if [[ "$rt" == "$profile_rt" ]]; then
+      basename "$f" .json
+      return 0
+    fi
+  done
+  return 1
+}
+
+load_profile() {
+  local name="$1"
+  local file="$PROFILE_DIR/${name}.json"
+  [[ -f "$file" ]] || { echo "Profile '$name' not found. Saved profiles:"; ls "$PROFILE_DIR"/*.json 2>/dev/null | xargs -I{} basename {} .json; exit 1; }
+
+  local active
+  if active=$(detect_active_profile); then
+    echo "Auto-saving current profile: $active"
+    save_profile "$active"
+  fi
+
+  python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    profile = json.load(f)
+if 'keychain' not in profile:
+    profile = {'keychain': profile, 'oauthAccount': {}}
+print(json.dumps(profile['keychain']))
+with open(sys.argv[2]) as f:
+    claude_json = json.load(f)
+claude_json['oauthAccount'] = profile.get('oauthAccount', claude_json.get('oauthAccount', {}))
+with open(sys.argv[2], 'w') as f:
+    json.dump(claude_json, f, indent=2)
+" "$file" "$CLAUDE_JSON" > /tmp/claude-switch-creds.json
+
+  local creds
+  creds=$(cat /tmp/claude-switch-creds.json)
+  rm -f /tmp/claude-switch-creds.json
+  security delete-generic-password -s "$SERVICE" -a "$ACCOUNT" >/dev/null 2>&1 || true
+  security add-generic-password -s "$SERVICE" -a "$ACCOUNT" -w "$creds"
+  echo "Switched to: $name — start a new claude session for it to take effect"
+}
+
+show_info() {
+  local current
+  current=$(get_current_creds 2>/dev/null || echo "")
+
+  python3 -c "
+import json, sys, os, glob
+from datetime import datetime
+
+profile_dir = sys.argv[1]
+current = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None
+
+files = sorted(glob.glob(os.path.join(profile_dir, '*.json')))
+if not files:
+    print('No saved profiles. Use: claude-switch save <name>')
+    sys.exit(0)
+
+for f in files:
+    name = os.path.splitext(os.path.basename(f))[0]
+    try:
+        with open(f) as fh:
+            data = json.load(fh)
+        kc = data.get('keychain', data)
+        oauth = kc.get('claudeAiOauth', {})
+        acct = data.get('oauthAccount', {})
+        email = acct.get('emailAddress', '?')
+        sub = oauth.get('subscriptionType', '?')
+        exp_ms = oauth.get('expiresAt', 0)
+        exp = datetime.fromtimestamp(exp_ms / 1000).strftime('%Y-%m-%d %H:%M') if exp_ms else '?'
+        active = ''
+        if current:
+            try:
+                cur_data = json.loads(current)
+                if cur_data.get('claudeAiOauth', {}).get('refreshToken') == oauth.get('refreshToken'):
+                    active = ' *'
+            except: pass
+        print(f'  {name:<16} {email:<32} {sub:<12} expires {exp}{active}')
+    except Exception as e:
+        print(f'  {name:<16} error: {e}')
+" "$PROFILE_DIR" "$current"
+}
+
+[[ $# -ge 1 ]] || usage
+
+case "$1" in
+  save)
+    [[ $# -ge 2 ]] || { echo "Usage: claude-switch save <name>"; exit 1; }
+    save_profile "$2"
+    ;;
+  info)
+    show_info
+    ;;
+  -h|--help)
+    usage
+    ;;
+  *)
+    load_profile "$1"
+    ;;
+esac

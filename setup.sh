@@ -73,6 +73,13 @@ else
     log_error "npm not found - Claude CLI installation skipped" "npm install -g @anthropic-ai/claude-code"
 fi
 
+# Install claude-switch
+echo "🔀 Installing claude-switch..."
+mkdir -p ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/bin/claude-switch -o ~/.local/bin/claude-switch
+chmod +x ~/.local/bin/claude-switch
+echo "✅ claude-switch installed to ~/.local/bin/"
+
 # Setup SSH directory and config
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
