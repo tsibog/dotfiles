@@ -63,6 +63,8 @@ SSH keys are **automatically generated** during setup! The setup script will:
 - VS Code extensions: Claude Code, Copilot, Tailwind, etc.
 - Shell setup: Oh My Zsh with custom configuration
 - Git configuration with your user details
+- **claude-switch**: multi-account switcher for Claude Code (swaps keychain + identity cache)
+- **Claude Code skills**: commit, commit-split, create-mr, ship, ticket, week-summary, mr-breakdown, jira-cleanup, diy, find-skills, api-endpoint, svelte-component, svelte-core-bestpractices
 
 ## Updating
 
