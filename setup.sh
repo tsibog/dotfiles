@@ -80,6 +80,16 @@ curl -fsSL https://raw.githubusercontent.com/tsibog/dotfiles/master/bin/claude-s
 chmod +x ~/.local/bin/claude-switch
 echo "✅ claude-switch installed to ~/.local/bin/"
 
+# Install Claude Code skills
+SKILLS="api-endpoint commit commit-split create-mr diy find-skills jira-cleanup mr-breakdown ship svelte-component svelte-core-bestpractices ticket week-summary"
+echo "🧠 Installing Claude Code skills..."
+mkdir -p ~/.claude/skills
+for skill in $SKILLS; do
+    mkdir -p ~/.claude/skills/"$skill"
+    curl -fsSL "https://raw.githubusercontent.com/tsibog/dotfiles/master/claude/skills/${skill}/SKILL.md" -o ~/.claude/skills/"$skill"/SKILL.md || log_error "Failed to download skill: $skill" "curl skill $skill"
+done
+echo "✅ Claude Code skills installed"
+
 # Setup SSH directory and config
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
